@@ -1,0 +1,38 @@
+<?php
+/**
+ * Define install constants
+ */
+//Set your module name here. This has to stay here, because the install does not invoke the whole module and playing around with includes is not a good idea on install
+define('INSTALL_MODULE_NAME', 'Blank');
+
+/**
+ * Implementation of hook_install.
+ */
+function blank_install() {
+  //Set a message when we install the module
+  drupal_set_message( t('@module module has installed successfully. Please see README.txt for more information on this module.', array( '@module' => INSTALL_MODULE_NAME ) ) );
+}
+
+/**
+ * Implementation of hook_uninstall.
+ */
+function blank_uninstall() {
+  //Set a message when we uninstall the module.
+  drupal_set_message( t('@module module uninstalled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) );
+}
+
+/**
+ * Implementation of hook_enable.
+ */
+function blank_enable() {
+  //Set a message when we enable the module
+  drupal_set_message( t('@module module has been enabled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) );
+}
+
+/**
+ * Implementation of hook_disable.
+ */
+function blank_disable() {
+  //Set a message when we disable the module.
+  drupal_set_message( t('@module module has been disabled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) ); 
+}

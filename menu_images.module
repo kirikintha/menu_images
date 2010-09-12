@@ -1,0 +1,85 @@
+<?php
+/**
+ * Define Module Constants
+ */
+define("BLANK_MODULE_PATH", drupal_get_path( 'module', 'blank' ));
+
+//Include necessary Class(es) here - it's best to not have this in the init hook, because Drupal loads modules in different orders than we expect sometimes
+include_once( BLANK_MODULE_PATH. '/inc/class.module.inc' );
+
+/**
+ * Module Hooks
+ * @internal - I left these in alphabetical order, because I can't find a best practices document anywhere on hook ordering - if you find one let me know!
+ * @internal - you don't have to use any of these, just a quick template for common hooks
+ * http://drupaldeveloper.in/article/drupal-module-hooks-module-file (another place to look at hooks)
+ */
+
+/**
+ * Hook Block
+ */
+function blank_block($op = 'list', $delta = 0, $edit = array()) {
+  //Block Configuration Options: http://api.drupal.org/api/function/hook_block/6
+  //Switch between $op
+  switch ( $op ) {
+    //List Block Items
+    case 'list':
+      //Block Array(s) here
+      return $block;
+    //Configure Block
+    case 'configure':
+      //Block Array(s) here
+      return $block;
+    //View Block
+    case 'view':
+    default:
+      //Block Array(s) here
+      return $block;
+  }
+}
+
+/**
+ * Hook Form Alter
+ */
+function blank_form_alter( &$form, &$form_state, $form_id ) {
+  //Form Alterations here: http://api.drupal.org/api/function/hook_form_alter
+}
+
+/**
+ * Hook Init
+ */
+function blank_init() {
+  blank::_loadJS();
+}
+
+/**
+ * Hook Menu
+ */
+function blank_menu() {
+  //Render menu items for this module: http://api.drupal.org/api/function/hook_menu/6
+  $items = array();
+  return $items;
+}
+
+/**
+ * Hook Node API
+ */
+function blank_nodeapi( &$node, $op, $a3 = NULL, $a4 = NULL ) {
+  //Node API alterations: http://api.drupal.org/api/function/hook_nodeapi
+  //Switch between $op
+  switch ( $op ) {
+    //Don't include any operation you do not need
+    default:
+    break;
+  }
+}
+
+/**
+ * Hook Theme
+ */
+function blank_theme() {
+  //Theme Parameters here: http://drupal.org/node/165706
+}
+
+/**
+ * Additional Hooks As Needed
+ */
