@@ -1,7 +1,6 @@
-name           = Availability Calendar
-description    = Allows Users To create Flexible Availability Calendars with a CCK Widget.
-version        = 2.0
-dependencies[] = content
-dependencies[] = date_popup
-package        = CCK
+name           = Menu Images
+description    = Allows user to have an image per node, per menu item.
+version        = 1.0-dev
+package        = Other
+dependencies[] = filefield
 core           = 6.x

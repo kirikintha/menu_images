@@ -1,0 +1,13 @@
+div.current-menu-image {
+  float:left;
+  margin: 10px;
+}
+
+div.current-menu-image img {
+  max-height:167px;
+  max-width:250px;
+}
+
+div#edit-menu-parent-wrapper {
+  clear:left;
+}

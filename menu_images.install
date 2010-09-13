@@ -3,20 +3,49 @@
  * Define install constants
  */
 //Set your module name here. This has to stay here, because the install does not invoke the whole module and playing around with includes is not a good idea on install
-define('INSTALL_MODULE_NAME', 'Blank');
+define('INSTALL_MODULE_NAME', 'Menu Images');
+define("MENU_IMAGES_DIRECTORY", file_create_path() .'/menu-images');
 
 /**
  * Implementation of hook_install.
  */
-function blank_install() {
-  //Set a message when we install the module
-  drupal_set_message( t('@module module has installed successfully. Please see README.txt for more information on this module.', array( '@module' => INSTALL_MODULE_NAME ) ) );
+function menu_images_install() {
+  $ret    = array();
+  //Add in the fid for the menu_links column
+  $column = array(
+    'description' => 'The file id for the image attached to this menu.',
+    'type'        => 'int',
+    'size'        => 'big',
+    'not null'    => FALSE,
+  );
+  db_add_field($ret, 'menu_links', 'fid', $column);
+  //Add in the description for the menu item
+  $column = array(
+    'description' => 'The file id for the image attached to this menu.',
+    'type'        => 'text',
+    'size'        => 'big',
+    'not null'    => FALSE,
+  );
+  db_add_field($ret, 'menu_links', 'link_description', $column);
+  //Check the file directory for 'menu-images' directory and create if necessary
+  $dir = MENU_IMAGES_DIRECTORY;
+  file_check_directory( $dir, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS );
+  //Set our variables for image dimensions
+  variable_set('menu_image_picture_dimensions', '85x85');
+  variable_set('menu_image_picture_file_size', '30');
 }
 
 /**
  * Implementation of hook_uninstall.
  */
-function blank_uninstall() {
+function menu_images_uninstall() {
+  //Delete the columns we added in
+  $ret = array();
+  db_drop_field($ret, 'menu_links', 'fid');
+  db_drop_field($ret, 'menu_links', 'link_description');
+  //Del our variables for image dimensions
+  variable_del('menu_image_picture_dimensions');
+  variable_del('menu_image_picture_file_size');
   //Set a message when we uninstall the module.
   drupal_set_message( t('@module module uninstalled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) );
 }
@@ -24,7 +53,7 @@ function blank_uninstall() {
 /**
  * Implementation of hook_enable.
  */
-function blank_enable() {
+function menu_images_enable() {
   //Set a message when we enable the module
   drupal_set_message( t('@module module has been enabled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) );
 }
@@ -32,7 +61,7 @@ function blank_enable() {
 /**
  * Implementation of hook_disable.
  */
-function blank_disable() {
+function menu_images_disable() {
   //Set a message when we disable the module.
   drupal_set_message( t('@module module has been disabled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) ); 
 }

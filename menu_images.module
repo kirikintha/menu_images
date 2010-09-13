@@ -2,84 +2,143 @@
 /**
  * Define Module Constants
  */
-define("BLANK_MODULE_PATH", drupal_get_path( 'module', 'blank' ));
+define("MENU_IMAGES_MODULE_PATH", drupal_get_path( 'module', 'menu_images' ));
+define("MENU_IMAGES_DIRECTORY", file_create_path() .'/menu-images');
 
 //Include necessary Class(es) here - it's best to not have this in the init hook, because Drupal loads modules in different orders than we expect sometimes
-include_once( BLANK_MODULE_PATH. '/inc/class.module.inc' );
+include_once( MENU_IMAGES_MODULE_PATH. '/inc/class.module.inc' );
+include_once( MENU_IMAGES_MODULE_PATH. '/inc/admin.module.inc' );
 
 /**
- * Module Hooks
- * @internal - I left these in alphabetical order, because I can't find a best practices document anywhere on hook ordering - if you find one let me know!
- * @internal - you don't have to use any of these, just a quick template for common hooks
- * http://drupaldeveloper.in/article/drupal-module-hooks-module-file (another place to look at hooks)
+ * Hook menu
  */
-
-/**
- * Hook Block
- */
-function blank_block($op = 'list', $delta = 0, $edit = array()) {
-  //Block Configuration Options: http://api.drupal.org/api/function/hook_block/6
-  //Switch between $op
-  switch ( $op ) {
-    //List Block Items
-    case 'list':
-      //Block Array(s) here
-      return $block;
-    //Configure Block
-    case 'configure':
-      //Block Array(s) here
-      return $block;
-    //View Block
-    case 'view':
-    default:
-      //Block Array(s) here
-      return $block;
-  }
-}
-
-/**
- * Hook Form Alter
- */
-function blank_form_alter( &$form, &$form_state, $form_id ) {
-  //Form Alterations here: http://api.drupal.org/api/function/hook_form_alter
+function menu_images_menu() {
+  $items = array();
+  $items['admin/settings/menu-images'] = array(
+    'title'             => t('Menu Images'),
+    'page callback'     => 'drupal_get_form',
+    'page arguments'    => array('_menu_images_main_settings'),
+    'type'              => MENU_NORMAL_ITEM,
+    'access arguments'  => array('administer site configuration'),
+  );
+  return $items;
 }
 
 /**
  * Hook Init
  */
-function blank_init() {
-  blank::_loadJS();
+function menu_images_init() {
+  $menuImages = new menuImages();
+  $menuImages->_loadJS();
 }
 
 /**
- * Hook Menu
+ * Hook Form Alter
  */
-function blank_menu() {
-  //Render menu items for this module: http://api.drupal.org/api/function/hook_menu/6
-  $items = array();
-  return $items;
-}
-
-/**
- * Hook Node API
- */
-function blank_nodeapi( &$node, $op, $a3 = NULL, $a4 = NULL ) {
-  //Node API alterations: http://api.drupal.org/api/function/hook_nodeapi
-  //Switch between $op
-  switch ( $op ) {
-    //Don't include any operation you do not need
-    default:
+function menu_images_form_alter( &$form, &$form_state, $form_id ) {
+  //We are going to intercept the node form here via a switch, so if we need to add to anything here, then we can
+  switch ($form['#id']) {
+    case 'node-form':
+      //Add in our menu-images-form.css file
+      drupal_add_css(MENU_IMAGES_MODULE_PATH .'/css/menu-images-form.css');
+      //Modify our form wieghts, so it makes sense the order that you use things.
+      $form['menu']['parent']['#weight'] = 99;
+      $form['menu']['weight']['#weight'] = 100;
+      //Query the DB for our additions
+      $data = db_fetch_array(db_query("SELECT fid, link_description FROM {menu_links} WHERE mlid = %d", $form['menu']['mlid']['#value']));
+      //Add in our image field here
+      $form['menu']['menu_image']['link_description'] = array(
+        '#type'        => 'textfield',
+        '#description' => t('Add a description for this menu item'),
+        '#title'       => t('Menu item description.'),
+        '#size'        => 60,
+        '#default_value' => t($data['link_description']),
+      );
+      //Get our default file information.
+      $file  = field_file_load($data['fid']);
+      $image = (!empty($data['fid'])) ? theme('image', $file['filepath']) : t('No Image Selected');
+      $form['menu']['menu_image']['file'] = array(
+        '#type'          => 'file',
+        '#description'   => t('Add an image for this menu item. When you press save, the image will upload itself. To replace this image, browse for a new file. To delete this image, click on "delete this image".'),
+        '#title'         => t('Attach an image to this menu item no larger than !dimensions', array('!dimensions' => variable_get('menu_image_picture_dimensions', NULL))),
+        '#size'          => 40,
+        '#default_value' => $file['filepath'],
+        '#prefix'        => '<div class="current-menu-image"><h5>Current Image</h5>' .$image .'</div>',
+      );
+      //If we have an image, then show the delete checkbox
+      if (!is_null($data['fid'])) {
+        $form['menu']['menu_image']['delete_image'] = array(
+          '#type'          => 'checkbox',
+          '#description'   => t('Delete this image'),
+          '#title'         => t('Check this box to delete this image.'),
+          '#size'          => 60,
+          '#default_value' => 0,
+        );
+        $form['menu']['menu_image']['delete_image_filepath'] = array(
+          '#type'          => 'hidden',
+          '#default_value' => $file['filepath'],
+        );
+      }
+      //Add in our own submit handler, so we can just use our own submit function
+      $form['#submit'][]              = '_menu_images_form_submit';
+      $form['#attributes']['enctype'] = 'multipart/form-data';
     break;
   }
 }
 
 /**
- * Hook Theme
+ * Hook submit
  */
-function blank_theme() {
-  //Theme Parameters here: http://drupal.org/node/165706
+function _menu_images_form_submit( &$form, &$form_state ) {
+  //Save the file to our files directory if it does not exist.
+  //Validate the uploaded picture.
+  $validators = array(
+    'file_validate_is_image'         => array(),
+    'file_validate_image_resolution' => array(variable_get('menu_image_picture_dimensions', NULL)),
+    'file_validate_size'             => array(variable_get('menu_image_picture_file_size', '30') * 1024),
+  );
+  //Set error is file was not uploaded - the $_FILES array uses the top most name, so this is $_FILES['name']['menu'] - weird huh?
+  if ( $file = file_save_upload( 'menu', $validators, MENU_IMAGES_DIRECTORY, FALSE ) ) {
+    $form_state['values']['menu_image']['file'] = $file;
+  }
+  //Save our description, so it's easier to find in the node
+  $form_state['values']['menu_image']['link_description'] = $form_state['values']['menu']['menu_image']['link_description'];
+  //If we are deleting the node, then set the image delete flag
+  $form_state['values']['menu_image']['delete_image'] = $form_state['values']['menu']['menu_image']['delete_image'];
 }
 
 /**
- * Additional Hooks As Needed
+ * Implementation of hook_nodeapi().
  */
+function menu_images_nodeapi(&$node, $op) {
+  switch ($op) {
+    case 'insert':
+    case 'update':
+      //Update our SQL if we have a menu item.
+      if (isset($node->menu)) {
+        //Change the menu description
+        db_query("UPDATE {menu_links} SET link_description = '%s' WHERE mlid = %d", $node->menu_image['link_description'], $node->menu['mlid']);
+        //If we have new $file object, then update the fid.
+        if (is_object($node->menu_image['file']) && $node->menu_image['file']->fid > 0 && $node->menu_image['delete_image'] == 0) {
+          db_query("UPDATE {menu_links} SET fid = %d WHERE mlid = %d", $node->menu_image['file']->fid, $node->menu['mlid']);
+          //Set a success message.
+          drupal_set_message(t('Success! Your menu image has been uploaded.'));
+        } else {
+          //Else we are deleting an image from our database
+          file_delete( $node->menu_image['delete_image_filepath'] );
+          db_query( "DELETE FROM {files} WHERE filepath LIKE '%s'", $node->menu_image['delete_image_filepath']);
+          //Udate the record to have no data
+          db_query("UPDATE {menu_links} SET fid = NULL WHERE mlid = %d", $node->menu['mlid']);
+          drupal_set_message(t('Your menu image has been deleted.', 'warning'));
+        }
+      }
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_preprocess_page().
+ */
+function menu_images_preprocess_page(&$vars) {
+  
+}
