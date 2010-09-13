@@ -190,7 +190,7 @@ function phptemplate_links($links, $attributes = array('class' => 'links')) {
           $attributes = array(
             'class' => 'menu-image',
           );
-          $link['title'] = theme('image', $menuImages[$checkKey[1]]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
+          $link['title'] = theme('image_cache', 'menu_image_thumb', $menuImages[$checkKey[1]]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
         }
         // Pass in $link as $options, they share the same keys.
         $output .= l($link['title'], $link['href'], $link);
@@ -264,8 +264,52 @@ function phptemplate_menu_item_link($link) {
     $attributes = array(
       'class' => 'menu-image',
     );
-    $link['title'] = theme('image', $menuImages[$link['mlid']]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
+    $link['title'] = theme('image_cache', 'menu_image_thumb', $menuImages[$link['mlid']]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
   }
   //Return the link.
   return l($link['title'], $link['href'], $link['localized_options']);
+}
+
+/**
+* Implementation of hook_imagecache_default_presets().
+*/
+function menu_images_imagecache_default_presets() {
+  $presets = array();
+  $presets['menu_image_thumb'] = array (
+    'presetname' => 'menu_image_thumb',
+    'actions' =>
+    array (
+      0 =>
+      array (
+        'weight' => '0',
+        'module' => 'imagecache',
+        'action' => 'imagecache_scale_and_crop',
+        'data' =>
+        array (
+          'width' => '197',
+          'height' => '135',
+        ),
+      ),
+    ),
+  );
+
+  $presets['menu_image_full'] = array (
+    'presetname' => 'menu_image_full',
+    'actions' =>
+    array (
+      0 =>
+      array (
+        'weight' => '0',
+        'module' => 'imagecache',
+        'action' => 'imagecache_scale_and_crop',
+        'data' =>
+        array (
+          'width' => '50',
+          'height' => '50',
+        ),
+      ),
+    ),
+  );
+
+  return $presets;
 }
