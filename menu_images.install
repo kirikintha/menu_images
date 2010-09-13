@@ -7,6 +7,17 @@ define('INSTALL_MODULE_NAME', 'Menu Images');
 define("MENU_IMAGES_DIRECTORY", file_create_path() .'/menu-images');
 
 /**
+ * Implementation of hook_schema
+ * @internal This is to add cache tables that we can use in the future, so we can cache the data to a table, rather than just a variable
+ */
+function menu_images_schema() {
+  //Install the cache tables for this module.
+  $schema['cache_menu_images'] = drupal_get_schema_unprocessed( 'system', 'cache' );
+  return $schema;
+}
+
+
+/**
  * Implementation of hook_install.
  */
 function menu_images_install() {
@@ -27,6 +38,8 @@ function menu_images_install() {
     'not null'    => FALSE,
   );
   db_add_field($ret, 'menu_links', 'link_description', $column);
+  //Set the cache table via the schema.
+  drupal_install_schema('menu_images');
   //Check the file directory for 'menu-images' directory and create if necessary
   $dir = MENU_IMAGES_DIRECTORY;
   file_check_directory( $dir, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS );
@@ -46,6 +59,8 @@ function menu_images_uninstall() {
   //Del our variables for image dimensions
   variable_del('menu_image_picture_dimensions');
   variable_del('menu_image_picture_file_size');
+  //Uninstall Schema
+  drupal_uninstall_schema('menu_images');
   //Set a message when we uninstall the module.
   drupal_set_message( t('@module module uninstalled successfully.', array( '@module' => INSTALL_MODULE_NAME ) ) );
 }

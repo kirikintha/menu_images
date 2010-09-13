@@ -118,27 +118,154 @@ function menu_images_nodeapi(&$node, $op) {
       if (isset($node->menu)) {
         //Change the menu description
         db_query("UPDATE {menu_links} SET link_description = '%s' WHERE mlid = %d", $node->menu_image['link_description'], $node->menu['mlid']);
+        //Set our newCache variable for the description.
+        $newCache[$node->menu['mlid']]['description'] = $node->menu_image['link_description'];
         //If we have new $file object, then update the fid.
-        if (is_object($node->menu_image['file']) && $node->menu_image['file']->fid > 0 && $node->menu_image['delete_image'] == 0) {
+        if (is_object($node->menu_image['file']) && $node->menu_image['file']->fid > 0) {
           db_query("UPDATE {menu_links} SET fid = %d WHERE mlid = %d", $node->menu_image['file']->fid, $node->menu['mlid']);
+          //Set newCache to allow for the new file.
+          $newCache[$node->menu['mlid']]['file'] = $node->menu_image['file'];
           //Set a success message.
           drupal_set_message(t('Success! Your menu image has been uploaded.'));
-        } else {
+        } else if ($node->menu_image['delete_image'] == 1) {
           //Else we are deleting an image from our database
           file_delete( $node->menu_image['delete_image_filepath'] );
           db_query( "DELETE FROM {files} WHERE filepath LIKE '%s'", $node->menu_image['delete_image_filepath']);
           //Udate the record to have no data
           db_query("UPDATE {menu_links} SET fid = NULL WHERE mlid = %d", $node->menu['mlid']);
-          drupal_set_message(t('Your menu image has been deleted.', 'warning'));
+          //Set the newCache file to NULL.
+          $newCache[$node->menu['mlid']]['file'] = 'DELETE';
+          drupal_set_message(t('Your menu image has been deleted.'), 'warning');
         }
+        //Update the cache_menu_images table with our new menu_images data
+        menuImages::_setMenuImageCache($newCache);
       }
       break;
   }
 }
 
 /**
- * Implementation of hook_preprocess_page().
+ * Return a themed set of links.
+ *
+ * @param $links
+ *   A keyed array of links to be themed.
+ * @param $attributes
+ *   A keyed array of attributes
+ * @return
+ *   A string containing an unordered list of links.
  */
-function menu_images_preprocess_page(&$vars) {
-  
+function phptemplate_links($links, $attributes = array('class' => 'links')) {
+  global $language;
+  $output = '';
+
+  if (count($links) > 0) {
+    $output = '<ul'. drupal_attributes($attributes) .'>';
+
+    $num_links = count($links);
+    $i = 1;
+
+    foreach ($links as $key => $link) {
+      $class = $key;
+
+      // Add first, last and active classes to the list of links to help out themers.
+      if ($i == 1) {
+        $class .= ' first';
+      }
+      if ($i == $num_links) {
+        $class .= ' last';
+      }
+      if (isset($link['href']) && ($link['href'] == $_GET['q'] || ($link['href'] == '<front>' && drupal_is_front_page()))
+          && (empty($link['language']) || $link['language']->language == $language->language)) {
+        $class .= ' active';
+      }
+      $output .= '<li'. drupal_attributes(array('class' => $class)) .'>';
+
+      if (isset($link['href'])) {
+        $checkKey = explode('-',$key);
+        $menuImages = menuImages::_getCache('all_menu_images');
+        if (!empty($menuImages[$checkKey[1]])) {
+          //Set HTML to TRUE if we have an image we need to put in.
+          $link['html'] = TRUE;
+          //Set the image to have the proper alt text for SEO purposes.
+          $attributes = array(
+            'class' => 'menu-image',
+          );
+          $link['title'] = theme('image', $menuImages[$checkKey[1]]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
+        }
+        // Pass in $link as $options, they share the same keys.
+        $output .= l($link['title'], $link['href'], $link);
+      }
+      else if (!empty($link['title'])) {
+        // Some links are actually not links, but we wrap these in <span> for adding title and class attributes
+        if (empty($link['html'])) {
+          $link['title'] = check_plain($link['title']);
+        }
+        $span_attributes = '';
+        if (isset($link['attributes'])) {
+          $span_attributes = drupal_attributes($link['attributes']);
+        }
+        $output .= '<span'. $span_attributes .'>'. $link['title'] .'</span>';
+      }
+
+      $i++;
+      $output .= "</li>\n";
+    }
+
+    $output .= '</ul>';
+  }
+
+  return $output;
+}
+
+/**
+ * Allow Menu Items to have their own inidivudal class
+ */
+function phptemplate_menu_item($link, $has_children, $menu = '', $in_active_trail = FALSE, $extra_class = NULL) {
+  //Make a new DOM pbject we can play with to get our classes. This is a problem with Drupal's menu rendering.
+  $dom = new DOMDocument;
+  @$dom->loadHTML($link);
+  $dom->preserveWhiteSpace = false;
+  $links = $dom->getElementsByTagName('a');
+  //Loop through links to get id's
+  foreach ($links as $tag) { $id = $tag->getAttribute('id'); }
+  //Normal Drupal opertations come afterwards.
+  $class = ($menu ? 'expanded' : ($has_children ? 'collapsed' : 'leaf'));
+  if (!empty($extra_class)) {
+    $class .= ' '. $extra_class;
+  }
+  if ($in_active_trail) {
+    $class .= ' active-trail';
+  }
+  return '<li id="' .$id .'" class="'. $class .'">' .$link . $menu ."</li>\n";
+}
+
+/**
+ * Change links to have a menu id, so we can target those items individually
+ */
+function phptemplate_menu_item_link($link) {
+  //Add an ID to the link, so we can translates it into a, li id - since menu_tree is not interceptable
+  if (empty($link['localized_options'])) {
+    $link['localized_options'] = array();
+  }
+  //Id = the mlid and module name
+  $id = array($link['module'], $link['mlid']);
+  if (empty($link['module']) && empty($link['mlid'])) { 
+    //If this array is still empty, then use the title of the link
+    $id = split(" ", strtolower($link['title']));
+  }
+  //Output to localized options.
+  $link['localized_options']['attributes']['id'] = implode('-', $id);
+  //See if we need to output our link as an image through the regular menu system
+  $menuImages = menuImages::_getCache('all_menu_images');
+  if (!empty($menuImages[$link['mlid']])) {
+    //Set HTML to TRUE if we have an image we need to put in.
+    $link['localized_options']['html'] = TRUE;
+    //Set the image to have the proper alt text for SEO purposes.
+    $attributes = array(
+      'class' => 'menu-image',
+    );
+    $link['title'] = theme('image', $menuImages[$link['mlid']]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
+  }
+  //Return the link.
+  return l($link['title'], $link['href'], $link['localized_options']);
 }
