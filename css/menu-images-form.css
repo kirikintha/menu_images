@@ -8,6 +8,17 @@ div.current-menu-image img {
   max-width:250px;
 }
 
+div#edit-menu-menu-image-file-title-wrapper,
+div#edit-menu-menu-image-file-alt-wrapper,
+div#edit-menu-menu-image-delete-image-wrapper {
+  float:left;
+  width:500px;
+}
+
+div#edit-menu-menu-image-delete-image-wrapper {
+  float:right;
+}
+
 div#edit-menu-parent-wrapper {
-  clear:left;
+  clear:both;
 }

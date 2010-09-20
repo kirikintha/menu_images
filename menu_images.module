@@ -54,20 +54,21 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
       $form['menu']['weight']['#weight'] = 100;
       //Query the cache for our additions
       $cached_images = menuImages::_getCache('all_menu_images');
+      //Get the menu ID.
+      $mlid = $form['menu']['mlid']['#value'];
       //krumo($form['menu']['mlid']['#value']);
       //krumo($cached_images[$form['menu']['mlid']['#value']]['description']);
       //krumo($cached_images[$form['menu']['mlid']['#value']]['file']);
       //Add in our image field here
       $form['menu']['menu_image']['link_description'] = array(
         '#type'          => 'textfield',
-        '#description'   => t('Add a description for this menu item'),
-        '#title'         => t('Menu item description.'),
+        '#description'   => t('Add a description for this menu item.'),
+        '#title'         => t('Menu item description'),
         '#size'          => 60,
-        '#default_value' => t($cached_images[$form['menu']['mlid']['#value']]['description']),
+        '#default_value' => t($cached_images[$mlid]['description']),
       );
       //Get our default file information.
       //krumo($cached_images[$form['menu']['mlid']['#value']]['file']->filepath);
-      $mlid = $form['menu']['mlid']['#value'];
       $image = (!empty($cached_images[$mlid]['file']->filepath)) ? theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']),  $attributes) : t('No Image Selected');
       //krumo($image);
       $form['menu']['menu_image']['file'] = array(
@@ -75,8 +76,22 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
         '#description'   => t('Add an image for this menu item. When you press save, the image will upload itself. To replace this image, browse for a new file. To delete this image, click on "delete this image".'),
         '#title'         => t('Attach an image to this menu item no larger than !dimensions', array('!dimensions' => variable_get('menu_image_picture_dimensions', NULL))),
         '#size'          => 40,
-        '#default_value' => $cached_images[$form['menu']['mlid']['#value']]['file']->filepath,
+        '#default_value' => $cached_images[$mlid]['file']->filepath,
         '#prefix'        => '<div class="current-menu-image"><h5>Current Image</h5>' .$image .'</div>',
+      );
+      $form['menu']['menu_image']['file_title'] = array(
+        '#type'          => 'textfield',
+        '#description'   => t('Add a title to this menu image.'),
+        '#title'         => t('Image title'),
+        '#size'          => 40,
+        '#default_value' => t($cached_images[$mlid]['file_title']),
+      );
+      $form['menu']['menu_image']['file_alt'] = array(
+        '#type'          => 'textfield',
+        '#description'   => t('Add a description for this menu image.'),
+        '#title'         => t('Image description'),
+        '#size'          => 40,
+        '#default_value' => t($cached_images[$mlid]['file_alt']),
       );
       //If we have an image, then show the delete checkbox
       if (!empty($cached_images[$form['menu']['mlid']['#value']]['file']->filepath)) {
@@ -119,14 +134,18 @@ function _menu_images_form_submit( &$form, &$form_state ) {
       imagecache_image_flush($file->filepath);
     }
   }
-  //Save our description, so it's easier to find in the node
+  //Save our description, image title and image alt (description) so it's easier to find in the node.
   $form_state['values']['menu_image']['link_description'] = $form_state['values']['menu']['menu_image']['link_description'];
-  //If we are deleting the node, then set the image delete flag
+  $form_state['values']['menu_image']['file_title']       = $form_state['values']['menu']['menu_image']['file_title'];
+  $form_state['values']['menu_image']['file_alt']         = $form_state['values']['menu']['menu_image']['file_alt'];
+  
+  //If we are deleting the node, then set the image delete flag.
   $form_state['values']['menu_image']['delete_image'] = $form_state['values']['menu']['menu_image']['delete_image'];
 }
 
 /**
  * Implementation of hook_nodeapi().
+ * @todo - Remove db_query for menu_links table and keep this soley in our custom cache table
  */
 function menu_images_nodeapi(&$node, $op) {
   switch ($op) {
@@ -136,8 +155,10 @@ function menu_images_nodeapi(&$node, $op) {
       if (isset($node->menu)) {
         //Change the menu description
         db_query("UPDATE {menu_links} SET link_description = '%s' WHERE mlid = %d", $node->menu_image['link_description'], $node->menu['mlid']);
-        //Set our newCache variable for the description.
+        //Set our newCache variable for the description, file_title and file_alt.
         $newCache[$node->menu['mlid']]['description'] = $node->menu_image['link_description'];
+        $newCache[$node->menu['mlid']]['file_title']  = $node->menu_image['file_title'];
+        $newCache[$node->menu['mlid']]['file_alt']    = $node->menu_image['file_alt'];
         //If we have new $file object, then update the fid.
         if (is_object($node->menu_image['file']) && $node->menu_image['file']->fid > 0) {
           db_query("UPDATE {menu_links} SET fid = %d WHERE mlid = %d", $node->menu_image['file']->fid, $node->menu['mlid']);
@@ -145,11 +166,8 @@ function menu_images_nodeapi(&$node, $op) {
           $newCache[$node->menu['mlid']]['file'] = $node->menu_image['file'];
           //Set a success message.
           drupal_set_message(t('Success! Your menu image has been uploaded.'));
-        } else if ($node->menu_image['delete_image'] == 1) {
+        } else if ($node->menu_image['delete_image'] === 1) {
           //Else we are deleting an image from our database
-          /**
-           * @todo Somehow this is being Invoked and deleting our menu image
-           */
           file_delete( $node->menu_image['delete_image_filepath'] );
           db_query( "DELETE FROM {files} WHERE filepath LIKE '%s'", $node->menu_image['delete_image_filepath']);
           //Udate the record to have no data
@@ -233,7 +251,7 @@ function menu_images_preprocess_page(&$vars) {
               'class' => 'menu-images-image',
             );
             //Turn the title into the image.
-            $vars[$key][$item]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']),  $attributes); 
+            $vars[$key][$item]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['file_alt']), t($cached_images[$mlid]['file_title']), $attributes); 
             //-> debug $vars[$key][$item]['title'] = theme('image', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']), $attributes);
           }
         }

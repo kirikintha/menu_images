@@ -44,6 +44,8 @@ class menuImages {
     $key = key($newCache);
     //Description field.
     $oldCache[$key]['description'] = $newCache[$key]['description'];
+    $oldCache[$key]['file_title']  = $newCache[$key]['file_title'];
+    $oldCache[$key]['file_alt']    = $newCache[$key]['file_alt'];
     //File Field, if we have an object or the value is DELETE.
     if ($newCache[$key]['file'] == 'DELETE') {
       unset($oldCache[$key]['file']);
