@@ -1,5 +1,13 @@
 <?php
 /**
+ * @name Menu Images
+ * Allows end users to add images to their menues via the node form and admin UI.
+ * NOTE: Currently this only uses the Secondary Links navigation.
+ * @author Paul T. Huntsberger courtesy of our friends at Blue Tent Marketing
+ * @version 1.0-dev
+ */
+
+/**
  * Define Module Constants
  */
 define("MENU_IMAGES_MODULE_PATH", drupal_get_path( 'module', 'menu_images' ));
@@ -15,11 +23,11 @@ include_once( MENU_IMAGES_MODULE_PATH. '/inc/admin.module.inc' );
 function menu_images_menu() {
   $items = array();
   $items['admin/settings/menu-images'] = array(
-    'title'             => t('Menu Images'),
-    'page callback'     => 'drupal_get_form',
-    'page arguments'    => array('_menu_images_main_settings'),
-    'type'              => MENU_NORMAL_ITEM,
-    'access arguments'  => array('administer site configuration'),
+    'title'            => t('Menu Images'),
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('_menu_images_main_settings'),
+    'type'             => MENU_NORMAL_ITEM,
+    'access arguments' => array('administer site configuration'),
   );
   return $items;
 }
@@ -44,29 +52,34 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
       //Modify our form wieghts, so it makes sense the order that you use things.
       $form['menu']['parent']['#weight'] = 99;
       $form['menu']['weight']['#weight'] = 100;
-      //Query the DB for our additions
-      $data = db_fetch_array(db_query("SELECT fid, link_description FROM {menu_links} WHERE mlid = %d", $form['menu']['mlid']['#value']));
+      //Query the cache for our additions
+      $cached_images = menuImages::_getCache('all_menu_images');
+      //krumo($form['menu']['mlid']['#value']);
+      //krumo($cached_images[$form['menu']['mlid']['#value']]['description']);
+      //krumo($cached_images[$form['menu']['mlid']['#value']]['file']);
       //Add in our image field here
       $form['menu']['menu_image']['link_description'] = array(
-        '#type'        => 'textfield',
-        '#description' => t('Add a description for this menu item'),
-        '#title'       => t('Menu item description.'),
-        '#size'        => 60,
-        '#default_value' => t($data['link_description']),
+        '#type'          => 'textfield',
+        '#description'   => t('Add a description for this menu item'),
+        '#title'         => t('Menu item description.'),
+        '#size'          => 60,
+        '#default_value' => t($cached_images[$form['menu']['mlid']['#value']]['description']),
       );
       //Get our default file information.
-      $file  = field_file_load($data['fid']);
-      $image = (!empty($data['fid'])) ? theme('image', $file['filepath']) : t('No Image Selected');
+      //krumo($cached_images[$form['menu']['mlid']['#value']]['file']->filepath);
+      $mlid = $form['menu']['mlid']['#value'];
+      $image = (!empty($cached_images[$mlid]['file']->filepath)) ? theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']),  $attributes) : t('No Image Selected');
+      //krumo($image);
       $form['menu']['menu_image']['file'] = array(
         '#type'          => 'file',
         '#description'   => t('Add an image for this menu item. When you press save, the image will upload itself. To replace this image, browse for a new file. To delete this image, click on "delete this image".'),
         '#title'         => t('Attach an image to this menu item no larger than !dimensions', array('!dimensions' => variable_get('menu_image_picture_dimensions', NULL))),
         '#size'          => 40,
-        '#default_value' => $file['filepath'],
+        '#default_value' => $cached_images[$form['menu']['mlid']['#value']]['file']->filepath,
         '#prefix'        => '<div class="current-menu-image"><h5>Current Image</h5>' .$image .'</div>',
       );
       //If we have an image, then show the delete checkbox
-      if (!is_null($data['fid'])) {
+      if (!empty($cached_images[$form['menu']['mlid']['#value']]['file']->filepath)) {
         $form['menu']['menu_image']['delete_image'] = array(
           '#type'          => 'checkbox',
           '#description'   => t('Delete this image'),
@@ -76,7 +89,7 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
         );
         $form['menu']['menu_image']['delete_image_filepath'] = array(
           '#type'          => 'hidden',
-          '#default_value' => $file['filepath'],
+          '#default_value' => $cached_images[$form['menu']['mlid']['#value']]['file']->filepath,
         );
       }
       //Add in our own submit handler, so we can just use our own submit function
@@ -99,7 +112,12 @@ function _menu_images_form_submit( &$form, &$form_state ) {
   );
   //Set error is file was not uploaded - the $_FILES array uses the top most name, so this is $_FILES['name']['menu'] - weird huh?
   if ( $file = file_save_upload( 'menu', $validators, MENU_IMAGES_DIRECTORY, FALSE ) ) {
+    //Assign the file to a more reasonable value that we don't have to dig for in the array.
     $form_state['values']['menu_image']['file'] = $file;
+    //Flush the image cache preset for this image.
+    if (module_exists('imagecache')) {
+      imagecache_image_flush($file->filepath);
+    }
   }
   //Save our description, so it's easier to find in the node
   $form_state['values']['menu_image']['link_description'] = $form_state['values']['menu']['menu_image']['link_description'];
@@ -129,6 +147,9 @@ function menu_images_nodeapi(&$node, $op) {
           drupal_set_message(t('Success! Your menu image has been uploaded.'));
         } else if ($node->menu_image['delete_image'] == 1) {
           //Else we are deleting an image from our database
+          /**
+           * @todo Somehow this is being Invoked and deleting our menu image
+           */
           file_delete( $node->menu_image['delete_image_filepath'] );
           db_query( "DELETE FROM {files} WHERE filepath LIKE '%s'", $node->menu_image['delete_image_filepath']);
           //Udate the record to have no data
@@ -145,171 +166,78 @@ function menu_images_nodeapi(&$node, $op) {
 }
 
 /**
- * Return a themed set of links.
- *
- * @param $links
- *   A keyed array of links to be themed.
- * @param $attributes
- *   A keyed array of attributes
- * @return
- *   A string containing an unordered list of links.
- */
-function phptemplate_links($links, $attributes = array('class' => 'links')) {
-  global $language;
-  $output = '';
-
-  if (count($links) > 0) {
-    $output = '<ul'. drupal_attributes($attributes) .'>';
-
-    $num_links = count($links);
-    $i = 1;
-
-    foreach ($links as $key => $link) {
-      $class = $key;
-
-      // Add first, last and active classes to the list of links to help out themers.
-      if ($i == 1) {
-        $class .= ' first';
-      }
-      if ($i == $num_links) {
-        $class .= ' last';
-      }
-      if (isset($link['href']) && ($link['href'] == $_GET['q'] || ($link['href'] == '<front>' && drupal_is_front_page()))
-          && (empty($link['language']) || $link['language']->language == $language->language)) {
-        $class .= ' active';
-      }
-      $output .= '<li'. drupal_attributes(array('class' => $class)) .'>';
-
-      if (isset($link['href'])) {
-        $checkKey = explode('-',$key);
-        $menuImages = menuImages::_getCache('all_menu_images');
-        if (!empty($menuImages[$checkKey[1]])) {
-          //Set HTML to TRUE if we have an image we need to put in.
-          $link['html'] = TRUE;
-          //Set the image to have the proper alt text for SEO purposes.
-          $attributes = array(
-            'class' => 'menu-image',
-          );
-          $link['title'] = theme('image_cache', 'menu_image_thumb', $menuImages[$checkKey[1]]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
-        }
-        // Pass in $link as $options, they share the same keys.
-        $output .= l($link['title'], $link['href'], $link);
-      }
-      else if (!empty($link['title'])) {
-        // Some links are actually not links, but we wrap these in <span> for adding title and class attributes
-        if (empty($link['html'])) {
-          $link['title'] = check_plain($link['title']);
-        }
-        $span_attributes = '';
-        if (isset($link['attributes'])) {
-          $span_attributes = drupal_attributes($link['attributes']);
-        }
-        $output .= '<span'. $span_attributes .'>'. $link['title'] .'</span>';
-      }
-
-      $i++;
-      $output .= "</li>\n";
-    }
-
-    $output .= '</ul>';
-  }
-
-  return $output;
-}
-
-/**
- * Allow Menu Items to have their own inidivudal class
- */
-function phptemplate_menu_item($link, $has_children, $menu = '', $in_active_trail = FALSE, $extra_class = NULL) {
-  //Make a new DOM pbject we can play with to get our classes. This is a problem with Drupal's menu rendering.
-  $dom = new DOMDocument;
-  @$dom->loadHTML($link);
-  $dom->preserveWhiteSpace = false;
-  $links = $dom->getElementsByTagName('a');
-  //Loop through links to get id's
-  foreach ($links as $tag) { $id = $tag->getAttribute('id'); }
-  //Normal Drupal opertations come afterwards.
-  $class = ($menu ? 'expanded' : ($has_children ? 'collapsed' : 'leaf'));
-  if (!empty($extra_class)) {
-    $class .= ' '. $extra_class;
-  }
-  if ($in_active_trail) {
-    $class .= ' active-trail';
-  }
-  return '<li id="' .$id .'" class="'. $class .'">' .$link . $menu ."</li>\n";
-}
-
-/**
- * Change links to have a menu id, so we can target those items individually
- */
-function phptemplate_menu_item_link($link) {
-  //Add an ID to the link, so we can translates it into a, li id - since menu_tree is not interceptable
-  if (empty($link['localized_options'])) {
-    $link['localized_options'] = array();
-  }
-  //Id = the mlid and module name
-  $id = array($link['module'], $link['mlid']);
-  if (empty($link['module']) && empty($link['mlid'])) { 
-    //If this array is still empty, then use the title of the link
-    $id = split(" ", strtolower($link['title']));
-  }
-  //Output to localized options.
-  $link['localized_options']['attributes']['id'] = implode('-', $id);
-  //See if we need to output our link as an image through the regular menu system
-  $menuImages = menuImages::_getCache('all_menu_images');
-  if (!empty($menuImages[$link['mlid']])) {
-    //Set HTML to TRUE if we have an image we need to put in.
-    $link['localized_options']['html'] = TRUE;
-    //Set the image to have the proper alt text for SEO purposes.
-    $attributes = array(
-      'class' => 'menu-image',
-    );
-    $link['title'] = theme('image_cache', 'menu_image_thumb', $menuImages[$link['mlid']]['file']->filepath, t($link['title']), t($link['title']), $attributes, FALSE);
-  }
-  //Return the link.
-  return l($link['title'], $link['href'], $link['localized_options']);
-}
-
-/**
 * Implementation of hook_imagecache_default_presets().
+* @todo - make these interoperable in the UI with other imagecache presets, so you can choose.
 */
 function menu_images_imagecache_default_presets() {
   $presets = array();
+  //Image Thumb.
   $presets['menu_image_thumb'] = array (
     'presetname' => 'menu_image_thumb',
-    'actions' =>
-    array (
-      0 =>
-      array (
+    'actions'    => array (
+      0 => array (
         'weight' => '0',
         'module' => 'imagecache',
         'action' => 'imagecache_scale_and_crop',
-        'data' =>
-        array (
-          'width' => '197',
+        'data' => array (
+          'width'  => '197',
           'height' => '135',
         ),
       ),
     ),
   );
-
+  //Full Image.
   $presets['menu_image_full'] = array (
     'presetname' => 'menu_image_full',
-    'actions' =>
-    array (
-      0 =>
-      array (
+    'actions'    => array (
+      0 => array (
         'weight' => '0',
         'module' => 'imagecache',
         'action' => 'imagecache_scale_and_crop',
-        'data' =>
-        array (
-          'width' => '50',
-          'height' => '50',
+        'data' => array (
+          'width'  => '1010',
+          'height' => '614',
         ),
       ),
     ),
   );
-
   return $presets;
+}
+
+/**
+ * Implementation of hook_preprocess_page().
+ */
+function menu_images_preprocess_page(&$vars) {
+  //Get all images in our cache table.
+  $cached_images = menuImages::_getCache('all_menu_images');
+  //Switch between arguments, and apply to the selected menu items.
+  $menues = variable_get('menu_images_menues_to_process',array('secondary_links'));
+  //If we are in Primary Links or Secondary Links, we use theme('links') in the end, so we should only have to override the link in question. 
+  foreach ($vars as $key => $value) {
+    if (in_array($key, $menues)) {
+      //If we are in the array, loop through and see if we have an item that has a corresponding image and let that run through
+      foreach ($vars[$key] as $item => $link) {
+        //Get only the numeric contents of this menu item, which is the mlid we need
+        $mlid = ereg_replace('[^0-9]+', '', $item);
+        if (!empty($cached_images[$mlid])) {
+          //If we have a cached image for this menu item or a description, then modify the link.
+          if (isset($cached_images[$mlid]['description'])) {
+            //We don't want to overide the title, so we are adding this as alt text.
+            $vars[$key][$item]['attributes']['alt'] = t($cached_images[$mlid]['description']);
+          }
+          //If we have a filepath, use that as our imagecached image.
+          if (is_object($cached_images[$mlid]['file'])) {
+            $vars[$key][$item]['html']  = TRUE;
+            //Set the attributes for our image, so the are SEO friendly.
+            $attributes = array(
+              'class' => 'menu-images-image',
+            );
+            //Turn the title into the image.
+            $vars[$key][$item]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']),  $attributes); 
+            //-> debug $vars[$key][$item]['title'] = theme('image', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['description']), t($vars[$key][$item]['title']), $attributes);
+          }
+        }
+      }
+    }
+  }
 }
