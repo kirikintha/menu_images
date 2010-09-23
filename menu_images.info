@@ -1,6 +1,6 @@
 name           = Menu Images
-description    = Allows user to have an image per node, per menu item.
-version        = 1.0-dev
+description    = Allows user to have an image per node, per menu item and in the Admin Menues interface.
+version        = 1.0-Alpha-1
 package        = Other
 dependencies[] = filefield
 dependencies[] = menu_block
