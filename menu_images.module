@@ -46,6 +46,7 @@ function menu_images_init() {
 function menu_images_form_alter( &$form, &$form_state, $form_id ) {
   //We are going to intercept the node form here via a switch, so if we need to add to anything here, then we can
   switch ($form['#id']) {
+    case 'menu-edit-item':
     case 'node-form':
       //Add in our menu-images-form.css file
       drupal_add_css(MENU_IMAGES_MODULE_PATH .'/css/menu-images-form.css');
@@ -57,8 +58,8 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
       //Get the menu ID.
       $mlid = $form['menu']['mlid']['#value'];
       //krumo($form['menu']['mlid']['#value']);
-      //krumo($cached_images[$form['menu']['mlid']['#value']]['description']);
-      //krumo($cached_images[$form['menu']['mlid']['#value']]['file']);
+      //krumo($cached_images[$mlid]['description']);
+      //krumo($cached_images[$mlid]['file']);
       //Add in our image field here
       $form['menu']['menu_image']['link_description'] = array(
         '#type'          => 'textfield',
@@ -94,7 +95,7 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
         '#default_value' => t($cached_images[$mlid]['file_alt']),
       );
       //If we have an image, then show the delete checkbox
-      if (!empty($cached_images[$form['menu']['mlid']['#value']]['file']->filepath)) {
+      if (!empty($cached_images[$mlid]['file']->filepath)) {
         $form['menu']['menu_image']['delete_image'] = array(
           '#type'          => 'checkbox',
           '#description'   => t('Delete this image'),
@@ -104,13 +105,13 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
         );
         $form['menu']['menu_image']['delete_image_filepath'] = array(
           '#type'          => 'hidden',
-          '#default_value' => $cached_images[$form['menu']['mlid']['#value']]['file']->filepath,
+          '#default_value' => $cached_images[$mlid]['file']->filepath,
         );
       }
       //Add in our own submit handler, so we can just use our own submit function
       $form['#submit'][]              = '_menu_images_form_submit';
       $form['#attributes']['enctype'] = 'multipart/form-data';
-    break;
+      break;
   }
 }
 
@@ -141,6 +142,31 @@ function _menu_images_form_submit( &$form, &$form_state ) {
   
   //If we are deleting the node, then set the image delete flag.
   $form_state['values']['menu_image']['delete_image'] = $form_state['values']['menu']['menu_image']['delete_image'];
+  
+  //If we are saving an admin menu, we do not use nodeapi, so we update here - don't like repeating code here
+  //@internal - When saving new nodes, we have to use nodeapi, because we have to get the mlid, when we are in admin we never get to node api sometimes, so we'll set it here.
+  //@internal - I know there is a better way to extrapolate this, this needs a little work here.
+  if ($form_state['values']['form_id'] == 'menu_edit_item') {
+    $mlid = $form_state['values']['menu']['mlid'];
+    //Set our newCache variable for the description, file_title and file_alt.
+    $newCache[$mlid]['description'] = $form_state['values']['menu_image']['link_description'];
+    $newCache[$mlid]['file_title']  = $form_state['values']['menu_image']['file_title'];
+    $newCache[$mlid]['file_alt']    = $form_state['values']['menu_image']['file_alt'];
+    //If we have new $file object, then update the fid.
+    if (is_object($form_state['values']['menu_image']['file']) && $form_state['values']['menu_image']['file']->fid > 0) {
+      //Set newCache to allow for the new file.
+      $newCache[$mlid]['file'] = $form_state['values']['menu_image']['file'];
+      //Set a success message.
+      drupal_set_message(t('Success! Your menu image has been uploaded.'));
+    } else if ($form_state['values']['menu_image']['delete_image'] === 1) {
+      //Else we are deleting an image from our database
+      //Set the newCache file to NULL.
+      $newCache[$mlid]['file'] = 'DELETE';
+      drupal_set_message(t('Your menu image has been deleted.'), 'warning');
+    }
+    //Update the cache_menu_images table with our new menu_images data
+    menuImages::_setMenuImageCache($newCache);
+  }
 }
 
 /**
@@ -154,6 +180,7 @@ function menu_images_nodeapi(&$node, $op) {
       //Update our SQL if we have a menu item.
       if (isset($node->menu)) {
         //Change the menu description
+        //@todo marked for deletion.
         db_query("UPDATE {menu_links} SET link_description = '%s' WHERE mlid = %d", $node->menu_image['link_description'], $node->menu['mlid']);
         //Set our newCache variable for the description, file_title and file_alt.
         $newCache[$node->menu['mlid']]['description'] = $node->menu_image['link_description'];
@@ -161,6 +188,7 @@ function menu_images_nodeapi(&$node, $op) {
         $newCache[$node->menu['mlid']]['file_alt']    = $node->menu_image['file_alt'];
         //If we have new $file object, then update the fid.
         if (is_object($node->menu_image['file']) && $node->menu_image['file']->fid > 0) {
+          //@todo marked for deletion.
           db_query("UPDATE {menu_links} SET fid = %d WHERE mlid = %d", $node->menu_image['file']->fid, $node->menu['mlid']);
           //Set newCache to allow for the new file.
           $newCache[$node->menu['mlid']]['file'] = $node->menu_image['file'];
@@ -168,9 +196,12 @@ function menu_images_nodeapi(&$node, $op) {
           drupal_set_message(t('Success! Your menu image has been uploaded.'));
         } else if ($node->menu_image['delete_image'] === 1) {
           //Else we are deleting an image from our database
+          //@todo marked for deletion.
           file_delete( $node->menu_image['delete_image_filepath'] );
+          //@todo marked for deletion.
           db_query( "DELETE FROM {files} WHERE filepath LIKE '%s'", $node->menu_image['delete_image_filepath']);
-          //Udate the record to have no data
+          //Update the record to have no data
+          //@todo marked for deletion.
           db_query("UPDATE {menu_links} SET fid = NULL WHERE mlid = %d", $node->menu['mlid']);
           //Set the newCache file to NULL.
           $newCache[$node->menu['mlid']]['file'] = 'DELETE';
@@ -235,6 +266,7 @@ function menu_images_preprocess_page(&$vars) {
     if (in_array($key, $menues)) {
       //If we are in the array, loop through and see if we have an item that has a corresponding image and let that run through
       foreach ($vars[$key] as $item => $link) {
+        //krumo($link);
         //Get only the numeric contents of this menu item, which is the mlid we need
         $mlid = ereg_replace('[^0-9]+', '', $item);
         if (!empty($cached_images[$mlid])) {
@@ -257,5 +289,59 @@ function menu_images_preprocess_page(&$vars) {
         }
       }
     }
+  }
+}
+
+/**
+ * Implementation of hook_preprocess_block().
+ */
+function menu_images_preprocess_block(&$vars) {
+  //Get all images in our cache table.
+  $cached_images = menuImages::_getCache('all_menu_images');
+  //Get the availables blocks we can modify, and apply to the selected menu items.
+  $blocks = variable_get('menu_images_block_to_process',array('menu_block'));
+  //If we have one of our block deltas in the array, modify that information
+  //@todo turn this into a way to get the module and delta in the same admin UI.
+  if (in_array($vars['block']->module, $blocks) && $vars['block']->delta == 1) {
+    //Load our menu content as a DOM document, so we can manipulate the li -> a value
+    //krumo($vars['block']->content);
+    $dom = new DOMDocument();
+    $dom->loadHTML($vars['block']->content);
+    $dom->preserveWhiteSpace = false;
+    $parent = $dom->getElementsByTagName('div');
+    $menu = $dom->getElementsByTagName('ul');
+    $lists = $dom->getElementsByTagName('li');
+    $links = array();
+    foreach ($lists as $list) {
+      $mlid = ereg_replace('[^0-9]+', '', $list->getAttribute('id'));
+      if (!empty($cached_images[$mlid])) {
+        //Get the class
+        $links[$list->getAttribute('id')]['attributes']['class'] = $list->getAttribute('class');
+        //Get the a tag href
+        $href = $list->getElementsByTagName('a');
+        $links[$list->getAttribute('id')]['href'] = $href->item(0)->getAttribute('href');
+        $links[$list->getAttribute('id')]['attributes']['title'] = $href->item(0)->getAttribute('title');
+        //If we have a cached image for this menu item or a description, then modify the link.
+        if (isset($cached_images[$mlid]['description'])) {
+          //We don't want to overide the title, so we are adding this as alt text.
+          $links[$list->getAttribute('id')]['attributes']['alt'] = t($cached_images[$mlid]['description']);
+        }
+        //If we have a filepath, use that as our imagecached image.
+        if (is_object($cached_images[$mlid]['file'])) {
+          $links[$list->getAttribute('id')]['html']  = TRUE;
+          //Set the attributes for our image, so the are SEO friendly.
+          $attributes = array(
+            'class' => 'menu-images-image',
+          );
+          //Turn the title into the image.
+          $links[$list->getAttribute('id')]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['file_alt']), t($cached_images[$mlid]['file_title']), $attributes); 
+        } else {
+          $links[$list->getAttribute('id')]['title'] = $href->item(0)->nodeValue;
+        }
+      }
+    }
+    //Theme our links
+    $output = '<div class="'.$parent->item(0)->getAttribute('class').'">'. theme('links', $links, array('class' => $menu->item(0)->getAttribute('class'))) .'</div>';
+    $vars['block']->content = str_replace('href="//','href="/',$output);
   }
 }

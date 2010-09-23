@@ -3,4 +3,5 @@ description    = Allows user to have an image per node, per menu item.
 version        = 1.0-dev
 package        = Other
 dependencies[] = filefield
+dependencies[] = menu_block
 core           = 6.x
