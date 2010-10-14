@@ -43,7 +43,7 @@ function menu_images_init() {
 /**
  * Hook Form Alter
  */
-function menu_images_form_alter( &$form, &$form_state, $form_id ) {
+function menu_images_form_alter(&$form, &$form_state, $form_id) {
   //We are going to intercept the node form here via a switch, so if we need to add to anything here, then we can
   switch ($form['#id']) {
     case 'menu-edit-item':
@@ -118,7 +118,7 @@ function menu_images_form_alter( &$form, &$form_state, $form_id ) {
 /**
  * Hook submit
  */
-function _menu_images_form_submit( &$form, &$form_state ) {
+function _menu_images_form_submit(&$form, &$form_state) {
   //Save the file to our files directory if it does not exist.
   //Validate the uploaded picture.
   $validators = array(
@@ -127,7 +127,9 @@ function _menu_images_form_submit( &$form, &$form_state ) {
     'file_validate_size'             => array(variable_get('menu_image_picture_file_size', '30') * 1024),
   );
   //Set error is file was not uploaded - the $_FILES array uses the top most name, so this is $_FILES['name']['menu'] - weird huh?
-  if ( $file = file_save_upload( 'menu', $validators, MENU_IMAGES_DIRECTORY, FALSE ) ) {
+  if ($file = file_save_upload('menu', $validators, MENU_IMAGES_DIRECTORY, FALSE)) {
+    //Set the status of the file to permanent.
+    file_set_status($file,FILE_STATUS_PERMANENT);
     //Assign the file to a more reasonable value that we don't have to dig for in the array.
     $form_state['values']['menu_image']['file'] = $file;
     //Flush the image cache preset for this image.
@@ -302,46 +304,45 @@ function menu_images_preprocess_block(&$vars) {
   $blocks = variable_get('menu_images_block_to_process',array('menu_block'));
   //If we have one of our block deltas in the array, modify that information
   //@todo turn this into a way to get the module and delta in the same admin UI.
-  if (in_array($vars['block']->module, $blocks) && $vars['block']->delta == 1) {
+  if (in_array($vars['block']->module, $blocks)) {
     //Load our menu content as a DOM document, so we can manipulate the li -> a value
     //krumo($vars['block']->content);
     $dom = new DOMDocument();
     $dom->loadHTML($vars['block']->content);
     $dom->preserveWhiteSpace = false;
     $parent = $dom->getElementsByTagName('div');
-    $menu = $dom->getElementsByTagName('ul');
-    $lists = $dom->getElementsByTagName('li');
-    $links = array();
+    $menu   = $dom->getElementsByTagName('ul');
+    $lists  = $dom->getElementsByTagName('li');
+    $links  = array();
     foreach ($lists as $list) {
       $mlid = ereg_replace('[^0-9]+', '', $list->getAttribute('id'));
-      if (!empty($cached_images[$mlid])) {
+      if (!empty($cached_images[$mlid]) && is_object($cached_images[$mlid]['file'])) {
         //Get the class
         $links[$list->getAttribute('id')]['attributes']['class'] = $list->getAttribute('class');
         //Get the a tag href
         $href = $list->getElementsByTagName('a');
         $links[$list->getAttribute('id')]['href'] = $href->item(0)->getAttribute('href');
-        $links[$list->getAttribute('id')]['attributes']['title'] = $href->item(0)->getAttribute('title');
+        $links[$list->getAttribute('id')]['attributes']['title'] = t($href->item(0)->getAttribute('title'));
         //If we have a cached image for this menu item or a description, then modify the link.
         if (isset($cached_images[$mlid]['description'])) {
           //We don't want to overide the title, so we are adding this as alt text.
           $links[$list->getAttribute('id')]['attributes']['alt'] = t($cached_images[$mlid]['description']);
-        }
-        //If we have a filepath, use that as our imagecached image.
-        if (is_object($cached_images[$mlid]['file'])) {
-          $links[$list->getAttribute('id')]['html']  = TRUE;
-          //Set the attributes for our image, so the are SEO friendly.
-          $attributes = array(
-            'class' => 'menu-images-image',
-          );
-          //Turn the title into the image.
-          $links[$list->getAttribute('id')]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['file_alt']), t($cached_images[$mlid]['file_title']), $attributes); 
         } else {
-          $links[$list->getAttribute('id')]['title'] = $href->item(0)->nodeValue;
+          $links[$list->getAttribute('id')]['attributes']['alt'] = t($href->item(0)->nodeValue);
         }
+        //Turn the link to an HTML link ad make an image cache image from it.
+        $links[$list->getAttribute('id')]['html']  = TRUE;
+        //Set the attributes for our image, so the are SEO friendly.
+        $attributes = array(
+          'class' => 'menu-images-image',
+        );
+        //Turn the title into the image.
+        $links[$list->getAttribute('id')]['title'] = theme('imagecache', 'menu_image_thumb', $cached_images[$mlid]['file']->filepath, t($cached_images[$mlid]['file_alt']), t($cached_images[$mlid]['file_title']), $attributes);
       }
     }
     //Theme our links
     $output = '<div class="'.$parent->item(0)->getAttribute('class').'">'. theme('links', $links, array('class' => $menu->item(0)->getAttribute('class'))) .'</div>';
     $vars['block']->content = str_replace('href="//','href="/',$output);
   }
+  unset($cached_images);
 }
